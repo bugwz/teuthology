@@ -100,6 +100,7 @@ def main(args):
 
     keep_running = True
     job_procs = set()
+    worst_returncode = 0
     while keep_running:
         # Check to see if we have a teuthology-results process hanging around
         # and if so, read its return code so that it can exit.
@@ -114,7 +115,12 @@ def main(args):
             stop()
 
         load_config()
-        job_procs = set(filter(lambda p: p.poll() is None, job_procs))
+        for proc in list(job_procs):
+            rc = proc.poll()
+            if rc is not None:
+                log.info(f"proc {proc} returncode={rc}")
+                worst_returncode = max([worst_returncode, rc])
+                job_procs.remove(proc)
         job = connection.reserve(timeout=60)
         if job is None:
             if exit_on_empty_queue and not job_procs:
@@ -170,6 +176,7 @@ def main(args):
         try:
             job_proc = subprocess.Popen(run_args)
             job_procs.add(job_proc)
+            log.info(f"job_procs={job_procs}")
             log.info('Job supervisor PID: %s', job_proc.pid)
         except Exception:
             error_message = "Saw error while trying to spawn supervisor."
@@ -187,11 +194,9 @@ def main(args):
         except Exception:
             log.exception("Saw exception while trying to delete job")
 
-    returncodes = set([0])
-    for proc in job_procs:
-        if proc.returncode is not None:
-            returncodes.add(proc.returncode)
-    return max(returncodes)
+    log.info(f"job_procs={job_procs}")
+    log.info(f"worst_returncode={worst_returncode}")
+    return worst_returncode
 
 
 def find_dispatcher_processes(machine_type):
